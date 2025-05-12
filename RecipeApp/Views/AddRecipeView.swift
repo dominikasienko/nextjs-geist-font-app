@@ -1,84 +1,233 @@
 import SwiftUI
+import PhotosUI
+import FirebaseStorage
 
 struct AddRecipeView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: RecipeViewModel
-
-    @State private var name: String = ""
-    @State private var category: String = ""
-    @State private var description: String = ""
-    @State private var ingredients: [Ingredient] = []
-    @State private var instructions: [String] = []
-    @State private var newIngredientName: String = ""
-    @State private var newIngredientQuantity: String = ""
-    @State private var newInstruction: String = ""
-
+    
+    @State private var name = ""
+    @State private var category = Recipe.categories[0]
+    @State private var description = ""
+    @State private var ingredients: [Ingredient] = [Ingredient(name: "", quantity: "")]
+    @State private var instructions: [String] = [""]
+    @State private var selectedImage: UIImage?
+    @State private var showingImagePicker = false
+    @State private var isLoading = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Recipe Info")) {
-                    TextField("Name", text: $name)
-                    TextField("Category", text: $category)
-                    TextField("Description", text: $description)
+                // Photo Section
+                Section {
+                    Button(action: { showingImagePicker = true }) {
+                        if let selectedImage = selectedImage {
+                            Image(uiImage: selectedImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 200)
+                                .frame(maxWidth: .infinity)
+                                .clipped()
+                        } else {
+                            HStack {
+                                Image(systemName: "photo")
+                                Text("Add Photo")
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 100)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                        }
+                    }
                 }
+                
+                // Basic Info Section
+                Section(header: Text("Basic Information")) {
+                    TextField("Recipe Name", text: $name)
+                    
+                    Picker("Category", selection: $category) {
+                        ForEach(Recipe.categories, id: \.self) { category in
+                            Text(category).tag(category)
+                        }
+                    }
+                    
+                    TextEditor(text: $description)
+                        .frame(height: 100)
+                        .overlay(
+                            Group {
+                                if description.isEmpty {
+                                    Text("Description")
+                                        .foregroundColor(.gray)
+                                        .padding(.leading, 4)
+                                        .padding(.top, 8)
+                                }
+                            },
+                            alignment: .topLeading
+                        )
+                }
+                
+                // Ingredients Section
                 Section(header: Text("Ingredients")) {
-                    ForEach(ingredients) { ingredient in
-                        Text("\(ingredient.quantity) \(ingredient.name)")
-                    }
-                    HStack {
-                        TextField("Quantity", text: $newIngredientQuantity)
-                        TextField("Ingredient", text: $newIngredientName)
-                        Button(action: addIngredient) {
-                            Image(systemName: "plus.circle.fill")
+                    ForEach($ingredients) { $ingredient in
+                        HStack {
+                            TextField("Name", text: $ingredient.name)
+                            TextField("Amount", text: $ingredient.quantity)
+                                .frame(width: 100)
                         }
-                        .disabled(newIngredientName.isEmpty || newIngredientQuantity.isEmpty)
+                    }
+                    .onDelete(perform: deleteIngredient)
+                    
+                    Button(action: addIngredient) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Add Ingredient")
+                        }
                     }
                 }
+                
+                // Instructions Section
                 Section(header: Text("Instructions")) {
-                    ForEach(instructions, id: \.self) { instruction in
-                        Text(instruction)
+                    ForEach($instructions) { $instruction in
+                        TextEditor(text: $instruction)
+                            .frame(height: 60)
                     }
-                    HStack {
-                        TextField("Add instruction", text: $newInstruction)
-                        Button(action: addInstruction) {
+                    .onDelete(perform: deleteInstruction)
+                    
+                    Button(action: addInstruction) {
+                        HStack {
                             Image(systemName: "plus.circle.fill")
+                            Text("Add Step")
                         }
-                        .disabled(newInstruction.isEmpty)
                     }
                 }
             }
             .navigationTitle("Add Recipe")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
+                        dismiss()
                     }
                 }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveRecipe()
-                        presentationMode.wrappedValue.dismiss()
+                    Button(action: saveRecipe) {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Save")
+                        }
                     }
-                    .disabled(name.isEmpty || ingredients.isEmpty || instructions.isEmpty)
+                    .disabled(!isValid || isLoading)
                 }
+            }
+            .sheet(isPresented: $showingImagePicker) {
+                ImagePicker(image: $selectedImage)
+            }
+            .alert("Error", isPresented: $showingError) {
+                Button("OK") { }
+            } message: {
+                Text(errorMessage)
             }
         }
     }
-
+    
+    private var isValid: Bool {
+        !name.isEmpty &&
+        !ingredients.isEmpty &&
+        ingredients.allSatisfy { !$0.name.isEmpty && !$0.quantity.isEmpty } &&
+        !instructions.isEmpty &&
+        instructions.allSatisfy { !$0.isEmpty }
+    }
+    
     private func addIngredient() {
-        let ingredient = Ingredient(name: newIngredientName, quantity: newIngredientQuantity)
-        ingredients.append(ingredient)
-        newIngredientName = ""
-        newIngredientQuantity = ""
+        ingredients.append(Ingredient(name: "", quantity: ""))
     }
-
+    
+    private func deleteIngredient(at offsets: IndexSet) {
+        ingredients.remove(atOffsets: offsets)
+    }
+    
     private func addInstruction() {
-        instructions.append(newInstruction)
-        newInstruction = ""
+        instructions.append("")
     }
-
+    
+    private func deleteInstruction(at offsets: IndexSet) {
+        instructions.remove(atOffsets: offsets)
+    }
+    
     private func saveRecipe() {
-        let recipe = Recipe(name: name, category: category, photoData: nil, description: description, ingredients: ingredients, instructions: instructions)
-        viewModel.addRecipe(recipe)
+        isLoading = true
+        
+        let recipe = Recipe(
+            name: name,
+            category: category,
+            description: description,
+            ingredients: ingredients.filter { !$0.name.isEmpty },
+            instructions: instructions.filter { !$0.isEmpty }
+        )
+        
+        // If there's an image, upload it first
+        if let image = selectedImage {
+            uploadImage(image, for: recipe)
+        } else {
+            saveRecipeToFirebase(recipe)
+        }
     }
+    
+    private func uploadImage(_ image: UIImage, for recipe: Recipe) {
+        guard let imageData = image.jpegData(compressionQuality: 0.5) else {
+            showError("Failed to process image")
+            return
+        }
+        
+        let imageName = "\(UUID().uuidString).jpg"
+        let storageRef = Storage.storage().reference().child("recipe_images/\(imageName)")
+        
+        storageRef.putData(imageData, metadata: nil) { _, error in
+            if let error = error {
+                showError(error.localizedDescription)
+                return
+            }
+            
+            storageRef.downloadURL { url, error in
+                if let error = error {
+                    showError(error.localizedDescription)
+                    return
+                }
+                
+                guard let downloadURL = url else {
+                    showError("Failed to get download URL")
+                    return
+                }
+                
+                var recipeWithImage = recipe
+                recipeWithImage.photoURL = downloadURL.absoluteString
+                saveRecipeToFirebase(recipeWithImage)
+            }
+        }
+    }
+    
+    private func saveRecipeToFirebase(_ recipe: Recipe) {
+        viewModel.addRecipe(recipe) { error in
+            isLoading = false
+            
+            if let error = error {
+                showError(error.localizedDescription)
+            } else {
+                dismiss()
+            }
+        }
+    }
+    
+    private func showError(_ message: String) {
+        errorMessage = message
+        showingError = true
+        isLoading = false
+    }
+}
+
+#Preview {
+    AddRecipeView(viewModel: RecipeViewModel())
 }
