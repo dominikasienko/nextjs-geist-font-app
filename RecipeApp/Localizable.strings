@@ -1,0 +1,27 @@
+/* English */
+"Login" = "Login";
+"Register" = "Register";
+"Forgot Password?" = "Forgot Password?";
+"Email" = "Email";
+"Password" = "Password";
+"Confirm Password" = "Confirm Password";
+"Reset Password" = "Reset Password";
+"Send Reset Link" = "Send Reset Link";
+"Profile" = "Profile";
+"Weight (kg)" = "Weight (kg)";
+"Height (cm)" = "Height (cm)";
+"Activity Level" = "Activity Level";
+"Language" = "Language";
+"Theme" = "Theme";
+"Change Password" = "Change Password";
+"Logout" = "Logout";
+"Delete Account" = "Delete Account";
+"Favorite Recipes" = "Favorite Recipes";
+"No favorite recipes yet." = "No favorite recipes yet.";
+"Settings" = "Settings";
+"Add Recipe" = "Add Recipe";
+"Recipes" = "Recipes";
+"Meal Plan" = "Meal Plan";
+"Shopping List" = "Shopping List";
+"Pantry" = "Pantry";
+"Nutrition Dashboard" = "Nutrition Dashboard";
