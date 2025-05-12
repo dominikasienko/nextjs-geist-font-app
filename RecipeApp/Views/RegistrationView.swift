@@ -1,71 +1,135 @@
 import SwiftUI
+import FirebaseAuth
 
 struct RegistrationView: View {
-    @State private var email: String = ""
-    @State private var password: String = ""
-    @State private var confirmPassword: String = ""
-    @State private var errorMessage: String?
-    @State private var isLoading: Bool = false
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var authViewModel: AuthViewModel
-
+    
+    @State private var email = ""
+    @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var displayName = ""
+    @State private var showingImagePicker = false
+    @State private var selectedImage: UIImage?
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Register")
-                .font(.largeTitle)
-                .bold()
-
-            TextField("Email", text: $email)
-                .keyboardType(.emailAddress)
-                .autocapitalization(.none)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-
-            SecureField("Password", text: $password)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-
-            SecureField("Confirm Password", text: $confirmPassword)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-
-            if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
+        ScrollView {
+            VStack(spacing: 20) {
+                // Profile Image Selection
+                Button(action: { showingImagePicker = true }) {
+                    if let selectedImage = selectedImage {
+                        Image(uiImage: selectedImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 120, height: 120)
+                            .clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 120, height: 120)
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                VStack(spacing: 15) {
+                    // Display Name Field
+                    TextField("Display Name", text: $displayName)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textContentType(.name)
+                    
+                    // Email Field
+                    TextField("Email", text: $email)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textContentType(.emailAddress)
+                        .autocapitalization(.none)
+                        .keyboardType(.emailAddress)
+                    
+                    // Password Field
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textContentType(.newPassword)
+                    
+                    // Confirm Password Field
+                    SecureField("Confirm Password", text: $confirmPassword)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textContentType(.newPassword)
+                }
+                .padding(.horizontal)
+                
+                // Register Button
+                Button(action: register) {
+                    if authViewModel.isAuthenticating {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Create Account")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .disabled(authViewModel.isAuthenticating || !isValidForm)
             }
-
-            Button(action: register) {
-                if isLoading {
-                    ProgressView()
-                } else {
-                    Text("Register")
-                        .bold()
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
+            .padding(.vertical)
+        }
+        .navigationTitle("Create Account")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Cancel") {
+                    dismiss()
                 }
             }
-            .disabled(isLoading)
-
-            Spacer()
         }
-        .padding()
-    }
-
-    private func register() {
-        guard password == confirmPassword else {
-            errorMessage = "Passwords do not match"
-            return
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePicker(image: $selectedImage)
         }
-        isLoading = true
-        errorMessage = nil
-        authViewModel.register(email: email, password: password) { result in
-            isLoading = false
-            switch result {
-            case .success:
-                // Handle successful registration
-                break
-            case .failure(let error):
-                errorMessage = error.localizedDescription
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
+        }
+        .alert("Error", isPresented: .constant(authViewModel.error != nil)) {
+            Button("OK") {
+                authViewModel.error = nil
+            }
+        } message: {
+            if let error = authViewModel.error {
+                Text(error.localizedDescription)
             }
         }
+    }
+    
+    private var isValidForm: Bool {
+        !email.isEmpty &&
+        !password.isEmpty &&
+        !confirmPassword.isEmpty &&
+        !displayName.isEmpty &&
+        password == confirmPassword &&
+        password.count >= 6
+    }
+    
+    private func register() {
+        guard isValidForm else {
+            showingError = true
+            errorMessage = "Please check your input and try again."
+            return
+        }
+        
+        authViewModel.signUp(email: email, password: password, displayName: displayName)
+    }
+}
+
+#Preview {
+    NavigationView {
+        RegistrationView()
+            .environmentObject(AuthViewModel())
     }
 }
