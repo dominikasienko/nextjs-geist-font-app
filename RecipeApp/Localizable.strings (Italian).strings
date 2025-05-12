@@ -1,0 +1,27 @@
+/* Italian */
+"Login" = "Accesso";
+"Register" = "Registrati";
+"Forgot Password?" = "Password dimenticata?";
+"Email" = "Email";
+"Password" = "Password";
+"Confirm Password" = "Conferma Password";
+"Reset Password" = "Reimposta Password";
+"Send Reset Link" = "Invia Link di Reimpostazione";
+"Profile" = "Profilo";
+"Weight (kg)" = "Peso (kg)";
+"Height (cm)" = "Altezza (cm)";
+"Activity Level" = "Livello di Attività";
+"Language" = "Lingua";
+"Theme" = "Tema";
+"Change Password" = "Cambia Password";
+"Logout" = "Esci";
+"Delete Account" = "Elimina Account";
+"Favorite Recipes" = "Ricette Preferite";
+"No favorite recipes yet." = "Nessuna ricetta preferita ancora.";
+"Settings" = "Impostazioni";
+"Add Recipe" = "Aggiungi Ricetta";
+"Recipes" = "Ricette";
+"Meal Plan" = "Piano Pasto";
+"Shopping List" = "Lista della Spesa";
+"Pantry" = "Dispensa";
+"Nutrition Dashboard" = "Dashboard Nutrizione";
