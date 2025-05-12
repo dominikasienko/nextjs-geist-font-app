@@ -1,114 +1,111 @@
 import SwiftUI
-import FirebaseAuth
 
 struct SettingsView: View {
-    @EnvironmentObject var userProfileVM: UserProfileViewModel
     @EnvironmentObject var authViewModel: AuthViewModel
+    @StateObject private var userProfileVM = UserProfileViewModel()
+    
+    // Image picker state
+    @State private var showingImagePicker = false
+    @State private var inputImage: UIImage?
+    @State private var profileImage: Image?
+    
+    // User info state
     @State private var displayName: String = ""
-    @State private var weight: String = ""
-    @State private var height: String = ""
-    @State private var activityLevel: String = ""
-    @State private var selectedLanguage: String = "en"
-    @State private var selectedTheme: String = "system"
-    @State private var errorMessage: String?
-    @State private var showDeleteAlert = false
-
-    let languages = ["en": "English", "it": "Italian", "fr": "French", "es": "Spanish"]
-    let themes = ["light": "Light", "dark": "Dark", "system": "System"]
+    @State private var email: String = ""
+    
+    // Alert state
+    @State private var showingLogoutAlert = false
+    @State private var showingDeleteAlert = false
 
     var body: some View {
-        Form {
-Section(header: Text("Profile")) {
-    TextField("Display Name", text: $displayName)
-    TextField("Weight (kg)", text: $weight)
-        .keyboardType(.decimalPad)
-    TextField("Height (cm)", text: $height)
-        .keyboardType(.decimalPad)
-    TextField("Activity Level", text: $activityLevel)
-    Picker("Diet Preference", selection: $dietPreference) {
-        Text("None").tag("none")
-        Text("Vegan").tag("vegan")
-        Text("Keto").tag("keto")
-        Text("Vegetarian").tag("vegetarian")
-        Text("Paleo").tag("paleo")
-    }
-    Picker("Sex", selection: $sex) {
-        Text("Male").tag("male")
-        Text("Female").tag("female")
-        Text("Other").tag("other")
-    }
-}
+        NavigationView {
+            Form {
+                Section(header: Text("Profile")) {
+                    VStack(alignment: .center) {
+                        if let profileImage = profileImage {
+                            profileImage
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 100, height: 100)
+                                .foregroundColor(.gray)
+                        }
+                        Button("Change Photo") {
+                            showingImagePicker = true
+                        }
+                        .padding(.top, 8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical)
 
-            Section(header: Text("Preferences")) {
-                Picker("Language", selection: $selectedLanguage) {
-                    ForEach(languages.keys.sorted(), id: \.self) { key in
-                        Text(languages[key] ?? key).tag(key)
-                    }
+                    TextField("Display Name", text: $displayName)
+                    TextField("Email", text: $email)
+                        .disabled(true)
                 }
-                Picker("Theme", selection: $selectedTheme) {
-                    ForEach(themes.keys.sorted(), id: \.self) { key in
-                        Text(themes[key] ?? key).tag(key)
+
+                Section(header: Text("Account")) {
+                    Button("Logout") {
+                        showingLogoutAlert = true
                     }
+                    .foregroundColor(.red)
+
+                    Button("Delete Account") {
+                        showingDeleteAlert = true
+                    }
+                    .foregroundColor(.red)
                 }
             }
-
-            Section {
-                Button("Change Password") {
-                    // Navigate to change password view or trigger password change flow
-                }
-                Button("Logout") {
-                    do {
-                        try authViewModel.logout()
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                }
-                Button("Delete Account") {
-                    showDeleteAlert = true
-                }
-                .foregroundColor(.red)
+            .navigationTitle("Settings")
+            .sheet(isPresented: $showingImagePicker, onDismiss: loadImage) {
+                ImagePicker(image: $inputImage)
             }
-
-            if let errorMessage = errorMessage {
-                Section {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
+            .alert("Logout", isPresented: $showingLogoutAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Logout", role: .destructive) {
+                    authViewModel.signOut()
+                }
+            } message: {
+                Text("Are you sure you want to logout?")
+            }
+            .alert("Delete Account", isPresented: $showingDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    authViewModel.deleteAccount()
+                }
+            } message: {
+                Text("Are you sure you want to delete your account? This action cannot be undone.")
+            }
+            .onAppear {
+                if let user = authViewModel.currentUser {
+                    email = user.email ?? ""
+                    userProfileVM.fetchUserProfile()
                 }
             }
         }
-        .navigationTitle("Settings")
-        .onAppear(perform: loadUserProfile)
-        .alert(isPresented: $showDeleteAlert) {
-            Alert(
-                title: Text("Delete Account"),
-                message: Text("Are you sure you want to delete your account? This action cannot be undone."),
-                primaryButton: .destructive(Text("Delete")) {
-                    deleteAccount()
-                },
-                secondaryButton: .cancel()
-            )
-        }
     }
 
-    private func loadUserProfile() {
-        if let profile = userProfileVM.userProfile {
-            displayName = profile.displayName ?? ""
-            weight = profile.weight != nil ? String(profile.weight!) : ""
-            height = profile.height != nil ? String(profile.height!) : ""
-            activityLevel = profile.activityLevel ?? ""
-            selectedLanguage = profile.preferredLanguage ?? "en"
-            selectedTheme = profile.themePreference ?? "system"
-        }
-    }
-
-    private func deleteAccount() {
-        authViewModel.deleteAccount { result in
-            switch result {
-            case .success:
-                // Handle post-deletion UI update or navigation
-                break
-            case .failure(let error):
-                errorMessage = error.localizedDescription
+    private func loadImage() {
+        guard let inputImage = inputImage else { return }
+        profileImage = Image(uiImage: inputImage)
+        
+        if let userId = authViewModel.currentUser?.uid {
+            let imagePath = "profile_photos/\(userId).jpg"
+            FirebaseService.shared.uploadImage(inputImage, path: imagePath) { result in
+                switch result {
+                case .success(let url):
+                    FirebaseService.shared.saveUserProfilePhotoURL(userId: userId, url: url) { error in
+                        if let error = error {
+                            print("Failed to save profile photo URL: \(error.localizedDescription)")
+                        }
+                    }
+                case .failure(let error):
+                    print("Failed to upload profile photo: \(error.localizedDescription)")
+                }
             }
         }
     }
