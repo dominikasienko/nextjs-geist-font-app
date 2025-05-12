@@ -2,70 +2,123 @@ import SwiftUI
 
 struct MealPlanView: View {
     @ObservedObject var viewModel: MealPlanViewModel
-    private let calendarSyncService = CalendarSyncService()
-    @State private var showSyncAlert = false
-    @State private var syncMessage = ""
-
+    @State private var selectedDate = Date()
+    @State private var showingRecipePicker = false
+    @State private var selectedMealType: MealPlan.MealType = .dinner
+    
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(viewModel.mealPlans) { mealPlan in
-                    Section(header: Text(dateFormatter.string(from: mealPlan.date))) {
-                        ForEach(mealPlan.recipes) { recipe in
-                            Text(recipe.name)
+        VStack(spacing: 0) {
+            // Calendar
+            DatePicker(
+                "Select Date",
+                selection: $selectedDate,
+                displayedComponents: [.date]
+            )
+            .datePickerStyle(GraphicalDatePickerStyle())
+            .padding()
+            .onChange(of: selectedDate) { newDate in
+                viewModel.fetchMealPlans(for: newDate)
+            }
+            
+            // Meal Type Selector
+            Picker("Meal Type", selection: $selectedMealType) {
+                ForEach(MealPlan.MealType.allCases, id: \.self) { type in
+                    Text(type.rawValue).tag(type)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
+            
+            // Meal Plans List
+            if viewModel.isLoading {
+                ProgressView()
+                    .padding()
+            } else {
+                List {
+                    if let plans = viewModel.mealPlans[Calendar.current.startOfDay(for: selectedDate)] {
+                        ForEach(plans.filter { $0.mealType == selectedMealType }) { plan in
+                            MealPlanRow(plan: plan)
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        viewModel.deleteMealPlan(plan, at: selectedDate)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                        }
+                        
+                        if plans.filter({ $0.mealType == selectedMealType }).isEmpty {
+                            Text("No meals planned for \(selectedMealType.rawValue.lowercased())")
+                                .foregroundColor(.secondary)
+                                .italic()
                         }
                     }
                 }
-                .onDelete(perform: deleteMealPlan)
+                .listStyle(PlainListStyle())
             }
-            .navigationTitle("Meal Plan")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
-                        Button(action: syncWithCalendar) {
-                            Image(systemName: "calendar.badge.plus")
-                                .font(.title2)
-                        }
-                        Button(action: addSampleMealPlan) {
-                            Image(systemName: "plus")
-                        }
-                    }
+            
+            // Add Meal Plan Button
+            Button(action: { showingRecipePicker = true }) {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Add \(selectedMealType.rawValue)")
                 }
-            }
-            .alert(isPresented: $showSyncAlert) {
-                Alert(title: Text("Calendar Sync"), message: Text(syncMessage), dismissButton: .default(Text("OK")))
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.accentColor)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .padding()
             }
         }
-    }
-
-    private func deleteMealPlan(at offsets: IndexSet) {
-        viewModel.deleteMealPlan(at: offsets)
-    }
-
-    private func addSampleMealPlan() {
-        // For MVP, add a sample meal plan for today
-        let sampleRecipe = Recipe(name: "Sample Recipe", category: "Dinner", photoData: nil, description: "Sample description", ingredients: [], instructions: [])
-        let mealPlan = MealPlan(date: Date(), recipes: [sampleRecipe])
-        viewModel.addMealPlan(mealPlan)
-    }
-
-    private func syncWithCalendar() {
-        calendarSyncService.syncMealPlansToCalendar(mealPlans: viewModel.mealPlans) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success:
-                    syncMessage = "Meal plans successfully synced to your calendar."
-                case .failure(let error):
-                    syncMessage = "Failed to sync: \(error.localizedDescription)"
-                }
-                showSyncAlert = true
+        .navigationTitle("Meal Planner")
+        .sheet(isPresented: $showingRecipePicker) {
+            RecipePickerView(selectedDate: selectedDate, mealType: selectedMealType) { recipe in
+                let mealPlan = MealPlan(
+                    recipeId: recipe.id,
+                    recipeName: recipe.name,
+                    date: selectedDate,
+                    mealType: selectedMealType
+                )
+                viewModel.addMealPlan(mealPlan)
+                showingRecipePicker = false
             }
+        }
+        .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
+            Button("OK") {
+                viewModel.clearError()
+            }
+        } message: {
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+            }
+        }
+        .onAppear {
+            viewModel.fetchMealPlans(for: selectedDate)
         }
     }
 }
 
-private let dateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    return formatter
-}()
+struct MealPlanRow: View {
+    let plan: MealPlan
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(plan.recipeName)
+                .font(.headline)
+            
+            if let notes = plan.notes {
+                Text(notes)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+#Preview {
+    NavigationView {
+        MealPlanView(viewModel: MealPlanViewModel())
+    }
+}
