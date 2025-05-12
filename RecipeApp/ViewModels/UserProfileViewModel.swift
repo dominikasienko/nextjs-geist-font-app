@@ -1,63 +1,112 @@
 import Foundation
-import Combine
 import FirebaseAuth
+import FirebaseFirestore
 
 class UserProfileViewModel: ObservableObject {
     @Published var userProfile: UserProfile?
-    @Published var errorMessage: String?
-
-    private var cancellables = Set<AnyCancellable>()
-
+    @Published var isLoading = false
+    @Published var error: Error?
+    
+    private let db = Firestore.firestore()
+    
     func fetchUserProfile() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
-        FirebaseService.shared.fetchUserProfile(userId: userId) { [weak self] result in
-            switch result {
-            case .success(let data):
-                do {
-                    let jsonData = try JSONSerialization.data(withJSONObject: data, options: [])
-                    let profile = try JSONDecoder().decode(UserProfile.self, from: jsonData)
-                    DispatchQueue.main.async {
-                        self?.userProfile = profile
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        self?.errorMessage = "Failed to decode user profile."
-                    }
-                }
-            case .failure(let error):
+        isLoading = true
+        
+        db.collection("users")
+            .document(userId)
+            .getDocument { [weak self] document, error in
+                guard let self = self else { return }
+                
                 DispatchQueue.main.async {
-                    self?.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                    
+                    if let error = error {
+                        self.error = error
+                        return
+                    }
+                    
+                    if let document = document,
+                       let profile = try? document.data(as: UserProfile.self) {
+                        self.userProfile = profile
+                    } else {
+                        // Create default profile if none exists
+                        let defaultProfile = UserProfile(
+                            id: userId,
+                            displayName: Auth.auth().currentUser?.displayName ?? "User",
+                            email: Auth.auth().currentUser?.email ?? "",
+                            photoURL: Auth.auth().currentUser?.photoURL?.absoluteString,
+                            preferences: UserPreferences()
+                        )
+                        self.saveUserProfile(defaultProfile)
+                    }
                 }
+            }
+    }
+    
+    func saveUserProfile(_ profile: UserProfile) {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        isLoading = true
+        
+        do {
+            try db.collection("users")
+                .document(userId)
+                .setData(from: profile) { [weak self] error in
+                    guard let self = self else { return }
+                    
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        if let error = error {
+                            self.error = error
+                        } else {
+                            self.userProfile = profile
+                        }
+                    }
+                }
+        } catch {
+            DispatchQueue.main.async {
+                self.isLoading = false
+                self.error = error
             }
         }
     }
-
-    func updateUserProfile(_ profile: UserProfile) {
-        FirebaseService.shared.saveUserProfile(userId: profile.id, data: profile.dictionary) { [weak self] error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self?.errorMessage = error.localizedDescription
-                } else {
-                    self?.userProfile = profile
-                }
-            }
+    
+    func updateProfile(displayName: String? = nil,
+                      photoURL: String? = nil,
+                      preferences: UserPreferences? = nil) {
+        guard var updatedProfile = userProfile else { return }
+        
+        if let displayName = displayName {
+            updatedProfile.displayName = displayName
         }
+        
+        if let photoURL = photoURL {
+            updatedProfile.photoURL = photoURL
+        }
+        
+        if let preferences = preferences {
+            updatedProfile.preferences = preferences
+        }
+        
+        saveUserProfile(updatedProfile)
+    }
+    
+    func clearUserProfile() {
+        userProfile = nil
+        error = nil
     }
 }
 
-private extension UserProfile {
-    var dictionary: [String: Any] {
-        [
-            "email": email,
-            "displayName": displayName ?? "",
-            "weight": weight ?? 0,
-            "height": height ?? 0,
-            "activityLevel": activityLevel ?? "",
-            "preferredLanguage": preferredLanguage ?? "en",
-            "themePreference": themePreference ?? "system",
-            "favoriteRecipeIDs": favoriteRecipeIDs ?? [],
-            "dietPreference": dietPreference ?? "",
-            "sex": sex ?? ""
-        ]
+struct UserPreferences: Codable {
+    var darkMode: Bool = false
+    var notificationsEnabled: Bool = true
+    var mealPlanReminders: Bool = true
+    var shoppingListReminders: Bool = true
+    var defaultServings: Int = 4
+    var measurementSystem: MeasurementSystem = .metric
+    
+    enum MeasurementSystem: String, Codable {
+        case metric
+        case imperial
     }
 }
