@@ -3,37 +3,66 @@ import EventKit
 
 class CalendarSyncService {
     private let eventStore = EKEventStore()
-
-    func requestAccess(completion: @escaping (Bool, Error?) -> Void) {
-        eventStore.requestAccess(to: .event, completion: completion)
-    }
-
-    func syncMealPlansToCalendar(mealPlans: [MealPlan], completion: @escaping (Result<Void, Error>) -> Void) {
-        requestAccess { [weak self] granted, error in
-            guard granted, error == nil else {
-                completion(.failure(error ?? NSError(domain: "CalendarAccess", code: 1, userInfo: [NSLocalizedDescriptionKey: "Access to calendar denied"])))
-                return
-            }
-            guard let self = self else { return }
-            do {
-                for mealPlan in mealPlans {
-                    try self.addMealPlanEvent(mealPlan)
-                }
-                completion(.success(()))
-            } catch {
-                completion(.failure(error))
+    static let shared = CalendarSyncService()
+    
+    private init() {}
+    
+    func requestAccess(completion: @escaping (Bool) -> Void) {
+        eventStore.requestAccess(to: .event) { granted, error in
+            DispatchQueue.main.async {
+                completion(granted)
             }
         }
     }
-
-    private func addMealPlanEvent(_ mealPlan: MealPlan) throws {
-        let calendar = eventStore.defaultCalendarForNewEvents
+    
+    func syncMealPlan(_ mealPlan: MealPlan, completion: @escaping (Result<String, Error>) -> Void) {
         let event = EKEvent(eventStore: eventStore)
-        event.calendar = calendar
-        event.title = "Meal Plan"
-        event.startDate = mealPlan.date
-        event.endDate = mealPlan.date.addingTimeInterval(60 * 60) // 1 hour duration
-        event.notes = mealPlan.recipes.map { $0.name }.joined(separator: ", ")
-        try eventStore.save(event, span: .thisEvent)
+        event.title = "\(mealPlan.mealType.rawValue): \(mealPlan.recipeName)"
+        event.notes = "Meal planned from Recipe App"
+        
+        // Set event time based on meal type
+        let calendar = Calendar.current
+        var dateComponents = calendar.dateComponents([.year, .month, .day], from: mealPlan.date)
+        
+        switch mealPlan.mealType {
+        case .breakfast:
+            dateComponents.hour = 8
+        case .lunch:
+            dateComponents.hour = 12
+        case .dinner:
+            dateComponents.hour = 18
+        case .snack:
+            dateComponents.hour = 15
+        }
+        
+        guard let startDate = calendar.date(from: dateComponents) else {
+            completion(.failure(NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid date"])))
+            return
+        }
+        
+        event.startDate = startDate
+        event.endDate = calendar.date(byAdding: .hour, value: 1, to: startDate)
+        event.calendar = eventStore.defaultCalendarForNewEvents
+        
+        do {
+            try eventStore.save(event, span: .thisEvent)
+            completion(.success(event.eventIdentifier))
+        } catch {
+            completion(.failure(error))
+        }
+    }
+    
+    func removeMealPlan(eventId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            completion(.failure(NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Event not found"])))
+            return
+        }
+        
+        do {
+            try eventStore.remove(event, span: .thisEvent)
+            completion(.success(()))
+        } catch {
+            completion(.failure(error))
+        }
     }
 }
