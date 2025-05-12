@@ -1,15 +1,52 @@
 import Foundation
+import FirebaseFirestoreSwift
 
-struct UserProfile: Codable {
-    var id: String
+struct UserProfile: Identifiable, Codable {
+    @DocumentID var id: String?
+    var displayName: String
     var email: String
-    var displayName: String?
-    var weight: Double?
-    var height: Double?
-    var activityLevel: String? // e.g., sedentary, active, etc.
-    var preferredLanguage: String?
-    var themePreference: String? // light, dark, system
-    var favoriteRecipeIDs: [String]?
-    var dietPreference: String? // e.g., vegan, keto, etc.
-    var sex: String? // e.g., male, female, other
+    var photoURL: String?
+    var preferences: UserPreferences
+    var favoriteRecipes: [String] = []
+    var lastLoginDate: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName
+        case email
+        case photoURL
+        case preferences
+        case favoriteRecipes
+        case lastLoginDate
+    }
+    
+    init(id: String? = nil,
+         displayName: String,
+         email: String,
+         photoURL: String? = nil,
+         preferences: UserPreferences = UserPreferences(),
+         favoriteRecipes: [String] = [],
+         lastLoginDate: Date? = Date()) {
+        self.id = id
+        self.displayName = displayName
+        self.email = email
+        self.photoURL = photoURL
+        self.preferences = preferences
+        self.favoriteRecipes = favoriteRecipes
+        self.lastLoginDate = lastLoginDate
+    }
+}
+
+extension UserProfile {
+    static var mock: UserProfile {
+        UserProfile(
+            id: "mock-user-id",
+            displayName: "Test User",
+            email: "test@example.com",
+            photoURL: nil,
+            preferences: UserPreferences(),
+            favoriteRecipes: [],
+            lastLoginDate: Date()
+        )
+    }
 }
