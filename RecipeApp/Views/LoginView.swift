@@ -1,67 +1,93 @@
 import SwiftUI
+import FirebaseAuth
 
 struct LoginView: View {
-    @State private var email: String = ""
-    @State private var password: String = ""
-    @State private var errorMessage: String?
-    @State private var isLoading: Bool = false
     @EnvironmentObject var authViewModel: AuthViewModel
-
+    @State private var email = ""
+    @State private var password = ""
+    @State private var showingRegistration = false
+    @State private var showingForgotPassword = false
+    
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Text("Login")
-                    .font(.largeTitle)
-                    .bold()
-
+        VStack(spacing: 20) {
+            // Logo or App Name
+            Text("Recipe App")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            VStack(spacing: 15) {
+                // Email Field
                 TextField("Email", text: $email)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-
+                    .textContentType(.emailAddress)
+                    .autocapitalization(.none)
+                    .keyboardType(.emailAddress)
+                
+                // Password Field
                 SecureField("Password", text: $password)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                }
-
+                    .textContentType(.password)
+                
+                // Login Button
                 Button(action: login) {
-                    if isLoading {
+                    if authViewModel.isAuthenticating {
                         ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     } else {
-                        Text("Login")
-                            .bold()
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
+                        Text("Sign In")
+                            .fontWeight(.semibold)
                     }
                 }
-                .disabled(isLoading)
-
-                NavigationLink("Forgot Password?", destination: ForgotPasswordView())
-
-                NavigationLink("Don't have an account? Register", destination: RegistrationView())
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .disabled(authViewModel.isAuthenticating)
+                
+                // Forgot Password
+                Button("Forgot Password?") {
+                    showingForgotPassword = true
+                }
+                .foregroundColor(.blue)
             }
-            .padding()
+            .padding(.horizontal)
+            
+            // Register Button
+            Button(action: { showingRegistration = true }) {
+                Text("Don't have an account? Sign Up")
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding()
+        .sheet(isPresented: $showingRegistration) {
+            NavigationView {
+                RegistrationView()
+            }
+        }
+        .sheet(isPresented: $showingForgotPassword) {
+            NavigationView {
+                ForgotPasswordView()
+            }
+        }
+        .alert("Error", isPresented: .constant(authViewModel.error != nil)) {
+            Button("OK") {
+                authViewModel.error = nil
+            }
+        } message: {
+            if let error = authViewModel.error {
+                Text(error.localizedDescription)
+            }
         }
     }
-
+    
     private func login() {
-        isLoading = true
-        errorMessage = nil
-        authViewModel.login(email: email, password: password) { result in
-            isLoading = false
-            switch result {
-            case .success:
-                // Handle successful login, e.g., dismiss login view
-                break
-            case .failure(let error):
-                errorMessage = error.localizedDescription
-            }
-        }
+        guard !email.isEmpty && !password.isEmpty else { return }
+        authViewModel.signIn(email: email, password: password)
     }
+}
+
+#Preview {
+    LoginView()
+        .environmentObject(AuthViewModel())
 }
